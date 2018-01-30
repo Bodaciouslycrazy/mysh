@@ -1,10 +1,20 @@
 //Bodie Malik
 
 //TODO
-//implement getcwd and chdir as cd command.
-
 //figure out how to organize built in functions.
-//SHELL Source Code
+
+
+/*
+PROCESS IDEA
+1- get input string from user
+2- copy string into history
+2- start tokenizing from the front.
+	if you run out of tokens, process the command, and output
+	if you run into a pipe token, process command and store in file. Then continue
+	
+*/
+
+
 #include <stdio.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -18,15 +28,16 @@
 #define SHOW_TOKENS false
 
 //FUNCTION DECLARATIONS
-char * TrimToken(char *orig, int length);
-void GetTokens();
 void ClearAllTokens();
+void PrintTokens();
+void ExecuteCommand();
 
 
 //GLOBAL VARIABLES
 //pointer to tokens
 char *tPoint[MAX_TOKENS];
 int tNum = 0;
+int ExitShell = 0;
 
 
 //-------------------------MAIN FUNCTION-----------------------------
@@ -34,202 +45,191 @@ int main(){
 	printf("Welcome to Bodie's OS\n");
 	
 	//This loop needs to break at some point.
-	while(true)
+	while(ExitShell == 0)
 	{
+		printf("$");
 		
-		GetTokens();
+		//Get input string
 		
-		//TOKENS HAVE BEEN RECIEVED. EXECUTE COMMAND
-		
-		//Debug code to show tokens.
-		#if SHOW_TOKENS
-		for(int i = 0; i < MAX_TOKENS; i++)
+		int tempSize = TEMP_CHUNK;
+		char *tempInput = malloc(tempSize);
+		char c;
+		int i = 0;
+		while((c = getchar()) != '\n' && c != EOF)
 		{
-			if(tPoint[i] != NULL)
+			tempInput[i++] = c;
+			
+			if(i == tempSize)
 			{
-				int tl = strlen(tPoint[i]);
-				printf("%s-%d\n", tPoint[i], tl);
+				tempSize += TEMP_CHUNK;
+				tempInput = realloc(tempInput, tempSize);
 			}
 		}
-		#endif
+		tempInput[i] = '\0';
+		//int debugStringLength = strlen(tempInput);
+		//printf("%s=%d\n",tempInput, debugStringLength);
 		
 		
-		//EXECUTE COMMAND
-		if(tNum == 0) //if there are no tokens, skip rest of loop
-			continue;
-		//BUILT IN COMMANDS
-		if(strcmp(tPoint[0], "exit") == 0) //EXIT
+		//--------------------------SAVE STRING TO HISTORY--------------------------------
+		//make sure to save a copy, not just the pointer since the string will be deconstructed
+		
+		
+		ClearAllTokens();
+		
+		//Interpret Tokens!
+		tNum = 0;
+		char *tempToken = strtok(tempInput, " ");
+		
+		while( tempToken != NULL )
 		{
-			//BREAK FROM LOOP, ENDING SHELL
-			break;
-		}
-		else if(strcmp(tPoint[0], "cd") == 0) //CHANGE DIRECTORY
-		{
-			if(tNum == 2)
+			if( strcmp(tempToken, "|") == 0)
 			{
-				int cdReturn = chdir(tPoint[1]);
-				if(cdReturn != 0)
+				//execute command and output to file
+				printf("NOT IMPLEMENTED PIPING YET! This command will be ignored.\n");
+				
+				//reset tokens
+				ClearAllTokens();
+			}
+			else
+			{
+				//Add token to token list.
+				if(tNum < MAX_TOKENS)
 				{
-					perror("CD Error");
+					tPoint[tNum++] = tempToken;
+				}
+				else
+				{
+					printf("You have reached the max arguments for this command.\n");
+					break;
 				}
 			}
-			else if( tNum > 2) printf("cd only takes one argument.\n");
-			else printf("cd requires an argument.\n");
-		}
-		else if(strcmp(tPoint[0], "history") == 0) //HISTORY
-		{
-			if(tNum == 1)
-			{
-				printf("NOT IMPLEMENTED YET!\n");
-			}
-			else if(tNum == 2 && strcmp(tPoint[1], "-c") == 0)
-			{
-				
-			}
-			//else if(){} //CONTINUE HERE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		}
-		else if(access(tPoint[0], X_OK) == 0) //OTHER EXECUTABLE
-		{
-			//RUN EXECUTABLE USING FORK
 			
-			pid_t processId = fork();
-			
-			if(processId == 0) //child process
-			{
-				//printf("Child Starting...\n");
-				int childReturn = execv(tPoint[0], tPoint);
-				perror("child had an accident");
-				exit(1);
-			}
-			
-			
-			//wait for child to finish
-			//printf("Parent waiting for child...\n");
-			wait(NULL);
-			//printf("\nChild finished!\n");
-			
-		}
-		else
-		{
-			//print error
-			printf("Could not find executable file %s\n", tPoint[0]);
+			tempToken = strtok(NULL, " ");
 		}
 		
-		//ADD COMMAND TO HISTORY
-		printf("NOT IMPLEMENTED: ADD COMMAND TO HISTORY\n");
+		PrintTokens();
 		
+		//Execute command
+		ExecuteCommand();
+		
+		//clean up memory
+		free(tempInput);
 	}
 	
-	//Clean up memory.
-	for(int i = 0; i < MAX_TOKENS; i++)
-	{
-		if(tPoint[i] != NULL)
-		{
-			free(tPoint[i]);
-		}
-	}
+	//Clear up memory?
+	
 	
 
 	return 0;
 }
 
-//Reads a line from the user and splits inputs into tokens.
-//All output will be in tPoint and tNum
-void GetTokens()
+
+//Executes the command currently described by the tokens.
+void ExecuteCommand()
 {
-	ClearAllTokens();
-	printf("$");
-	
-	//temp variables.
-	char *tempToken = malloc(TEMP_CHUNK);
-	int tempSize = TEMP_CHUNK;
-	int c = EOF;
-	int charCount = 0;
-	int tokenCount = 0;
-	bool startedToken = false;
-	
-	//read input until end line/file
-	do
+	if(tNum == 0) //if there are no tokens, skip
+		return;
+	//BUILT IN COMMANDS
+	if(strcmp(tPoint[0], "exit") == 0) //EXIT
 	{
-		c = getchar();
+		//BREAK FROM LOOP, ENDING SHELL
+		ExitShell = 1;
+		return;
+	}
+	else if(strcmp(tPoint[0], "cd") == 0) //CHANGE DIRECTORY
+	{
+		if(tNum == 2)
+		{
+			int cdReturn = chdir(tPoint[1]);
+			if(cdReturn != 0)
+			{
+				perror("CD Error");
+			}
+		}
+		else if( tNum > 2) printf("cd only takes one argument.\n");
+		else printf("cd requires an argument.\n");
+	}
+	else if(strcmp(tPoint[0], "history") == 0) //HISTORY
+	{
+		if(tNum == 1)
+		{
+			printf("NOT IMPLEMENTED YET!\n");
+		}
+		else if(tNum == 2 && strcmp(tPoint[1], "-c") == 0)
+		{
+			printf("NOT IMPLEMENTED YET!\n");
+		}
+		//else if(){} //CONTINUE HERE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	}
+	else if(access(tPoint[0], X_OK) == 0) //OTHER EXECUTABLE
+	{
+		//RUN EXECUTABLE USING FORK
 		
-		if((c == EOF || c == '\n' || c == ' ') && startedToken) //complete token
-		{	
-			//Point to new token
-			tPoint[tokenCount] = TrimToken(tempToken, charCount);
-
-			//Reset temp token
-			tempSize = TEMP_CHUNK;
-			tempToken = realloc(tempToken, tempSize);
-
-			//reset other variables
-			tokenCount++;
-			if(tokenCount >= MAX_TOKENS)
-			{
-				//do not read any more arguments
-				c = EOF;
-			}
-
-			startedToken = false;
-			charCount = 0;
-		}
-		else if( c != ' ' )//Token has not been completed, add to temp
+		pid_t processId = fork();
+		
+		if(processId == 0) //child process
 		{
-			tempToken[charCount++] = (char)c;
-
-			//reallocate tempToken if it is not big enough.
-			if(charCount == tempSize)
-			{
-				tempSize += TEMP_CHUNK;
-				tempToken = realloc(tempToken, tempSize);
-			}
-			
-			startedToken = true;
+			//printf("Child Starting...\n");
+			int childReturn = execv(tPoint[0], tPoint);
+			perror("child had an accident");
+			exit(1);
 		}
-
-	}while(c != '\n' && c != EOF);
-
-	tNum = tokenCount;
-	
-	//free the temp token.
-	free(tempToken);
-	
-	//delete tokens from previous commands.
-	for(int i = tokenCount; i < MAX_TOKENS; i++)
+		
+		
+		//wait for child to finish
+		//printf("Parent waiting for child...\n");
+		wait(NULL);
+		//printf("\nChild finished!\n");
+		
+	}
+	else
 	{
-		if(tPoint[i] != NULL)
-		{
-			free(tPoint[i]);
-			tPoint[i] = NULL;
-		}
+		//print error
+		printf("Could not find executable file %s\n", tPoint[0]);
 	}
 }
 
+
+
+//deletes all tokens.
 void ClearAllTokens()
 {
 	for(int i = 0; i < MAX_TOKENS; i++)
 	{
 		if(tPoint[i] != NULL)
 		{
-			free(tPoint[i]);
+			
+			//memmory does not need to be free since strtok does not allocate new memory.
 			tPoint[i] = NULL;
 		}
 	}
+	
+	tNum = 0;
+	
+	#if SHOW_TOKENS
+	/*
+	printf("Tokens after clear...\n");
+	PrintTokens();
+	printf("Clear Complete\n");
+	*/
+	#endif
 }
 
-//Trims a string to a certain length and returns a new pointer.
-char * TrimToken( char *orig, int length)
+
+//Prints every token currently stored.
+//Also prints their length.
+//Used mainly for debugging.
+void PrintTokens()
 {
-	
-	//printf("trimming to %d chars.\n",length);
-	char *trimmed = malloc(length + 1);
-
-	for(int i = 0; i < length; i++)
+	//Debug code to show tokens.
+	#if SHOW_TOKENS
+	for(int i = 0; i < MAX_TOKENS; i++)
 	{
-		trimmed[i] = orig[i];
+		if(tPoint[i] != NULL)
+		{
+			int tl = strlen(tPoint[i]);
+			printf("%s-%d\n", tPoint[i], tl);
+		}
 	}
-	
-	trimmed[length] = '\0';
-
-	return trimmed;
+	#endif
 }
