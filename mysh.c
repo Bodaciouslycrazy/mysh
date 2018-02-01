@@ -14,6 +14,8 @@ PROCESS IDEA
 	if you run out of tokens, process the command, and output
 	if you run into a pipe token, process command and store in file. Then continue
 	
+	every command removes its-self from the Command string.
+	the history command may add more to the front of the Command string
 */
 
 
@@ -28,13 +30,14 @@ PROCESS IDEA
 #define TEMP_CHUNK 64
 #define HISTORY_SIZE 100
 
+//Used for debugging.
 #define SHOW_TOKENS false
 
 //FUNCTION DECLARATIONS
+void ExecuteCommand( char *commandEnd);
 void ClearAllTokens();
 void PrintTokens();
 void SaveCommand( char *com );
-void ExecuteCommand();
 void ShowHistory();
 void ClearHistory();
 char * GetHistory(int num);
@@ -156,9 +159,9 @@ void ExecuteCommand(char *commandEnd)
 	
 	if(tNum == 0) //if there are no tokens, skip
 	{
-		printf("That command has not arguments...\n");
+		printf("That command has no arguments...\n");
 	}
-	if(strcmp(tPoint[0], "exit") == 0) //EXIT
+	else if(strcmp(tPoint[0], "exit") == 0) //EXIT
 	{
 		//BREAK FROM LOOP, ENDING SHELL
 		ExitShell = 1;
@@ -220,7 +223,6 @@ void ExecuteCommand(char *commandEnd)
 		//print error
 		printf("Could not find executable file %s\n", tPoint[0]);
 	}
-	
 	
 	//delete string from Command.
 	char *tempCommand = Command;
@@ -306,15 +308,16 @@ void SaveCommand( char *com )
 
 void ShowHistory()
 {
-	int di = 0;
 	for(int i = 0; i < HISTORY_SIZE; i++)
 	{
 		int ti = (i + HistoryIndex) % HISTORY_SIZE;
+		int di = HistoryIndex - HISTORY_SIZE + i;
 		if(History[ti] != NULL){
 			printf("%d  %s\n",di,History[ti]);
 			di++;
 		}
 	}
+	
 }
 
 void ClearHistory()
@@ -332,21 +335,12 @@ void ClearHistory()
 
 char * GetHistory(int num)
 {
-	int di = 0;
-	for(int i = 0; i < HISTORY_SIZE; i++)
+	//the -1 in this if statement prevents recursive history calls that could freeze the program.
+	if(num < HistoryIndex - 1 && num > HistoryIndex - HISTORY_SIZE) 
 	{
-		int ti = (i + HistoryIndex) % HISTORY_SIZE;
-		
-		if(History[ti] != NULL && di == num)
-		{
-			return History[ti];
-		}
-		else if(History[ti] != NULL)
-		{
-			di++;
-		}
+		return History[num % HISTORY_SIZE];
 	}
 	
-	printf("We could not find that history command.\n");
+	printf("Invalid history offset.\n");
 	return NULL;
 }
