@@ -26,7 +26,7 @@ PROCESS IDEA
 #include <stdbool.h>
 #include <string.h>
 
-#define MAX_TOKENS 16
+#define MAX_TOKENS 15
 #define TEMP_CHUNK 64
 #define HISTORY_SIZE 100
 
@@ -34,7 +34,7 @@ PROCESS IDEA
 #define SHOW_TOKENS false
 
 //FUNCTION DECLARATIONS
-void ExecuteCommand( char *commandEnd);
+void ExecuteCommand( char *commandin);
 void ClearAllTokens();
 void PrintTokens();
 void SaveCommand( char *com );
@@ -43,13 +43,6 @@ void ClearHistory();
 char * GetHistory(int num);
 
 
-//GLOBAL VARIABLES
-//pointer to tokens
-char *Command;
-int CommandSize = 0;
-
-char *tPoint[MAX_TOKENS];
-int tNum = 0;
 int ExitShell = 0;
 
 char *History[HISTORY_SIZE];
@@ -57,6 +50,7 @@ int HistoryIndex = 0;
 
 
 //-------------------------MAIN FUNCTION-----------------------------
+
 int main(){
 	printf("Welcome to Bodie's OS\n");
 	
@@ -66,8 +60,8 @@ int main(){
 		printf("$");
 		
 		//Get input string
-		CommandSize = TEMP_CHUNK;
-		Command = malloc(CommandSize);
+		int CommandSize = TEMP_CHUNK;
+		char *Command = malloc(CommandSize);
 		char c;
 		int i = 0;
 		while((c = getchar()) != '\n' && c != EOF)
@@ -86,60 +80,9 @@ int main(){
 		//make sure to save a copy, not just the pointer since the string will be deconstructed
 		SaveCommand(Command);
 		
-		//Tokenize!!!
-		ClearAllTokens();
-		char *tempToken = strtok(Command, " ");
-		int finished = 0;
-		do
-		{
-			if( tempToken == NULL)
-			{
-				//execute without pipe
-				ExecuteCommand( "\0" );
-				
-				if(Command == NULL || strlen(Command) <= 0) //nothing more to execute
-				{
-					finished = 1;
-				}
-				else //last command added something to command string. Continue executing.
-				{
-					ClearAllTokens();
-					
-					tempToken = strtok(Command, " ");
-				}
-			}
-			else if( strcmp(tempToken, "|") == 0)
-			{
-				printf("NOT IMPLEMENTED PIPING YET! This command will be run without a pipe.\n");
-			
-				//execute with pipe
-				ExecuteCommand( &tempToken[2] );
-				
-				//reset tokens
-				ClearAllTokens();
-				
-				tempToken = strtok(Command, " ");
-			}
-			else
-			{
-				//Add token to token list.
-				if(tNum < MAX_TOKENS)
-				{
-					tPoint[tNum++] = tempToken;
-				}
-				else
-				{
-					printf("You have reached the max arguments for this command. Argument ignored.\n");
-				}
-				
-				tempToken = strtok(NULL, " ");
-			
-			}
-		}while(finished == 0);
+		ExecuteCommand(Command);
 		
-		//clean up memory
 		free(Command);
-		Command = NULL;
 	}
 	
 	//Clear up memory?
@@ -150,12 +93,49 @@ int main(){
 }
 
 
-//Executes the command currently described by the tokens.
-void ExecuteCommand(char *commandEnd)
-{
-	PrintTokens();
+
+//Executes the command.
+void ExecuteCommand(char *commandin)
+{	
+	if(commandin == NULL || strlen(commandin) == 0)
+		return;
 	
-	int historyCopy = -1;
+	//printf("EXECUTING COMMAND: %s\n", commandin);
+
+	//TURN COMMAND INTO TOKENS
+	char *command = malloc( strlen(commandin));
+	strcpy(command, commandin);
+	
+	char *tPoint[MAX_TOKENS + 1];
+	int tNum = 0;
+	
+	char *ttok = strtok(command, " ");
+	
+	while(ttok != NULL)
+	{
+		if( strcmp(ttok, "|") == 0)
+		{
+			//turn on pipe
+			break;
+		}
+		else if(tNum < MAX_TOKENS)
+		{
+			tPoint[tNum++] = ttok;
+		}
+		else
+		{
+			printf("Hit max tokens.\n");
+		}
+		
+		ttok = strtok(NULL, " ");
+	}
+	
+	tPoint[tNum] = NULL;
+	
+	
+	
+	//RUN COMMAND
+	
 	
 	if(tNum == 0) //if there are no tokens, skip
 	{
@@ -192,7 +172,11 @@ void ExecuteCommand(char *commandEnd)
 		}
 		else if(tNum == 2 && atoi(tPoint[1]) > 0)
 		{
-			historyCopy = atoi(tPoint[1]);
+			//historyCopy = atoi(tPoint[1]);
+			char *historyCommand = GetHistory( atoi(tPoint[1]) );
+			
+			if(historyCommand != NULL)
+				ExecuteCommand(historyCommand);
 		}
 		else
 		{
@@ -224,65 +208,18 @@ void ExecuteCommand(char *commandEnd)
 		printf("Could not find executable file %s\n", tPoint[0]);
 	}
 	
-	//delete string from Command.
-	char *tempCommand = Command;
-	Command = malloc(CommandSize);
-	strcpy(Command, commandEnd);
-	free(tempCommand);
 	
-	if(historyCopy > 0)
+	if(ttok != NULL)
 	{
+		//recursively execute command
 		
-		char *hp = GetHistory(historyCopy);
-		if(hp != NULL)
-		{
-			tempCommand = Command;
-			CommandSize += strlen(hp) + 3;
-			Command = malloc(CommandSize);
-			strcpy(Command, hp);
-			strcat(Command, tempCommand);
-			free(tempCommand);
-		}
+		//this is a really gross line of code. It gets a pointer of the command string
+		//starting after the most recent pipe.
+		char *nextCommand = &ttok[ strlen(ttok) + 2];
+		ExecuteCommand( nextCommand );
 	}
 	
-	//debug stuff
-	//printf("NEW COMMAND: %s\n", Command);
-}
-
-
-
-//deletes all tokens.
-void ClearAllTokens()
-{
-	for(int i = 0; i < MAX_TOKENS; i++)
-	{
-		if(tPoint[i] != NULL)
-		{
-			tPoint[i] = NULL;
-		}
-	}
-	
-	tNum = 0;
-}
-
-
-//Prints every token currently stored.
-//Also prints their length.
-//Used mainly for debugging.
-void PrintTokens()
-{
-	//Debug code to show tokens.
-	#if SHOW_TOKENS
-	printf("Printing Tokens:\n");
-	for(int i = 0; i < MAX_TOKENS; i++)
-	{
-		if(tPoint[i] != NULL)
-		{
-			int tl = strlen(tPoint[i]);
-			printf("%s-%d\n", tPoint[i], tl);
-		}
-	}
-	#endif
+	free(command);
 }
 
 
@@ -306,6 +243,7 @@ void SaveCommand( char *com )
 	HistoryIndex++;
 }
 
+//prints all history
 void ShowHistory()
 {
 	for(int i = 0; i < HISTORY_SIZE; i++)
@@ -320,6 +258,7 @@ void ShowHistory()
 	
 }
 
+//clears all history and resets history index to 0
 void ClearHistory()
 {
 	HistoryIndex = 0;
@@ -333,6 +272,7 @@ void ClearHistory()
 	}
 }
 
+//returns a string of a past command based on the offset number
 char * GetHistory(int num)
 {
 	//the -1 in this if statement prevents recursive history calls that could freeze the program.
