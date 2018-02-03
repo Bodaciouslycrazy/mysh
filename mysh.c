@@ -18,7 +18,7 @@ PROCESS IDEA
 	the history command may add more to the front of the Command string
 */
 
-
+#include <fcntl.h>
 #include <stdio.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -34,19 +34,22 @@ PROCESS IDEA
 #define SHOW_TOKENS false
 
 //FUNCTION DECLARATIONS
-void ExecuteCommand( char *commandin);
+void ExecuteCommand( char *commandin, int pipein[2], int pipeout[2]);
 void ClearAllTokens();
 void PrintTokens();
 void SaveCommand( char *com );
 void ShowHistory();
 void ClearHistory();
 char * GetHistory(int num);
+void SetInput(int n);
+void SetOutput(int n);
 
-
+//Global Variables
 int ExitShell = 0;
 
 char *History[HISTORY_SIZE];
 int HistoryIndex = 0;
+
 
 
 //-------------------------MAIN FUNCTION-----------------------------
@@ -80,8 +83,11 @@ int main(){
 		//make sure to save a copy, not just the pointer since the string will be deconstructed
 		SaveCommand(Command);
 		
-		ExecuteCommand(Command);
 		
+		ExecuteCommand(Command, NULL, NULL);
+		
+		
+		//unallocate the command string
 		free(Command);
 	}
 	
@@ -95,10 +101,25 @@ int main(){
 
 
 //Executes the command.
-void ExecuteCommand(char *commandin)
+//called recursively for every pipe
+//PARAMETERS:
+//String commandin
+//		The command you execute. Can include multiple commands, arguments, and pipes.
+//int[2] pipein
+//		File descriptors of the pipe the command should use as input.
+//RETURNS:
+//		pointer to pipe that was output to.
+void ExecuteCommand(char *commandin, int pipein[2], int pipeout[2])
 {	
+	/* doesn't work with piping now
 	if(commandin == NULL || strlen(commandin) == 0)
 		return;
+	*/
+	
+	
+	//this is the pipe we output to if we need it
+	int usemypipeout = 0;
+	int mypipeout[2];
 	
 	//printf("EXECUTING COMMAND: %s\n", commandin);
 
@@ -116,6 +137,18 @@ void ExecuteCommand(char *commandin)
 		if( strcmp(ttok, "|") == 0)
 		{
 			//turn on pipe
+			//if pipeout is null, make new pipe
+			if( pipe(mypipeout) != 0)
+			{
+				perror("Pipe error:");
+			}
+			else
+			{
+				//printf("Created pipe: [%d, %d]\n",mypipeout[0],mypipeout[1]);
+				usemypipeout = 1;
+			}
+			
+			//break since this is end of subcommand.
 			break;
 		}
 		else if(tNum < MAX_TOKENS)
@@ -124,7 +157,7 @@ void ExecuteCommand(char *commandin)
 		}
 		else
 		{
-			printf("Hit max tokens.\n");
+			//printf("Hit max tokens.\n");
 		}
 		
 		ttok = strtok(NULL, " ");
@@ -133,6 +166,12 @@ void ExecuteCommand(char *commandin)
 	tPoint[tNum] = NULL;
 	
 	
+	if(pipeout != NULL && usemypipeout == 0)
+	{
+		usemypipeout = 1;
+		mypipeout[0] = pipeout[0];
+		mypipeout[1] = pipeout[1];
+	}
 	
 	//RUN COMMAND
 	
@@ -176,7 +215,13 @@ void ExecuteCommand(char *commandin)
 			char *historyCommand = GetHistory( atoi(tPoint[1]) );
 			
 			if(historyCommand != NULL)
-				ExecuteCommand(historyCommand);
+			{
+				if(usemypipeout == 1) ExecuteCommand(historyCommand, pipein, mypipeout);
+				else ExecuteCommand(historyCommand, pipein, pipeout);
+			}
+			else printf("Could not find history command!\n");
+			
+			//remember to not switch the pipes!
 		}
 		else
 		{
@@ -191,6 +236,18 @@ void ExecuteCommand(char *commandin)
 		
 		if(processId == 0) //child process
 		{
+			
+			//Change input to pipein
+			if(pipein != NULL)
+			{
+				//closes currentin and replaces it with pipein
+				SetInput( pipein[0] );
+			}
+			if(usemypipeout == 1)
+			{
+				SetOutput( mypipeout[1] );
+			}
+			
 			//printf("Child Starting...\n");
 			int childReturn = execv(tPoint[0], tPoint);
 			perror("child had an accident");
@@ -200,6 +257,9 @@ void ExecuteCommand(char *commandin)
 		//wait for child to finish
 		//printf("Parent waiting for child...\n");
 		wait(NULL);
+		//close the pipe input and output that the child was using.
+		if(pipein != NULL) close(pipein[0]);
+		if(usemypipeout == 1) close( mypipeout[1] );
 		//printf("\nChild finished!\n");
 	}
 	else
@@ -208,18 +268,20 @@ void ExecuteCommand(char *commandin)
 		printf("Could not find executable file %s\n", tPoint[0]);
 	}
 	
-	
+	int pipereturn[2];
 	if(ttok != NULL)
 	{
 		//recursively execute command
 		
 		//this is a really gross line of code. It gets a pointer of the command string
 		//starting after the most recent pipe.
-		char *nextCommand = &ttok[ strlen(ttok) + 2];
-		ExecuteCommand( nextCommand );
+		char *nextCommand = &ttok[ strlen(ttok) + 1];
+		ExecuteCommand( nextCommand, mypipeout , pipeout);
 	}
 	
 	free(command);
+	
+	return;
 }
 
 
@@ -283,4 +345,16 @@ char * GetHistory(int num)
 	
 	printf("Invalid history offset.\n");
 	return NULL;
+}
+
+//----------------------------Piping Functions-------------------------------------
+
+void SetInput(int n)
+{
+	dup2(n, 0);
+}
+
+void SetOutput(int n)
+{
+	dup2(n, 1);
 }
