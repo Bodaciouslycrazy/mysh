@@ -121,8 +121,6 @@ int main(){
 //int[2] pipeout
 //		File descriptors of the pipe the command should output to.
 //		if this is null, but a pipe token is found, it will create its own pipe to output to.
-//RETURNS:
-//		pointer to pipe that was output to.
 void ExecuteCommand(char *commandin, int pipein[2], int pipeout[2])
 {	
 	//this is the pipe we output to if we need it
